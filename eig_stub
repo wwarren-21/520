@@ -3,35 +3,79 @@ import rx_data as rx
 from scipy import linalg
 from matplotlib import pyplot as plt
 
+def read_xs():
+    microxs = rx.microscopic_cross_sections
+    fiss_yield = rx.fission_yield
+    return microxs, fiss_yield
+
 def calculate_constants():
     '''You will need to update this section of code. To calculate this you will need to create homogeneous
     values for each of the values based on the reactor composition'''
-    # Define constants assuming the reactor is homoegeneous
+    # Define constants assuming the reactor is homogeneous
     con_dict = {}
     # Solve for D
-    con_dict['d'] = None #replace the none with your calculation
+    con_dict['d'] = 1/ (3 * 0.02231931)  # units[cm/atoms],decimal value is sigma_s calculated on paper
 
-    # Solve for sigma_a 
-    con_dict['siga'] = None #replace the none with your calculation
+    # Solve for sigma_a
+    con_dict['siga'] = 1.4781 * (10**21) * rx.microscopic_cross_sections['U235']['xs_absorption'] / (1*10**24)  # units[atoms/cm]
 
     # assume a given nu of 2.4
     con_dict['nu'] = 2.4
 
     # solve for sigma_f
-    con_dict['sigf'] = None #replace the none with your calculation
+    con_dict['sigf'] = 1.4781 * (10**21) * rx.microscopic_cross_sections['U235']['xs_fission'] / (1*10**24)  # units[atoms/cm],need to create formula for atom density
     return con_dict
 
 def solve_flux(geo, microxs, fiss_yield, constants):
     '''Also update this section. You will need to build the matrix.'''
     # Build the matrix. You will need to build each row of the matrix and then add 
     # them to this matrix array. Then convert it to a np.array. 
-    matrix = []
-        #build matrix here
+    slices_x = int(geo[0] / geo[1])
+    matrix = np.zeros((slices_x, slices_x))
+    for i in range(slices_x):
+        if i == 0:
+            # matrix[i][i] = 0
+            # matrix[i + 1][i] = 0
+            matrix[i][i] = ((constants['d'] + 2 * constants['d'] + constants['d']) / (2 * geo[1] ** 2)) + constants['siga']
+            # matrix[i][i + 1] = 0
+            matrix[i][i + 1] = ((constants['d'] + constants['d']) / (2 * geo[1] ** 2))
+        elif i == slices_x:
+            matrix[i][i] = ((constants['d'] + 2 * constants['d'] + constants['d']) / (2 * geo[1] ** 2)) + constants['siga']
+            matrix[i][i - 1] = ((constants['d'] + constants['d']) / (2 * geo[1] ** 2))
+        elif i == (slices_x - 1):
+            matrix[i][i - 1] = ((constants['d'] + constants['d']) / (2 * geo[1] ** 2))
+            matrix[i][i] = ((constants['d'] + 2 * constants['d'] + constants['d']) / (2 * geo[1] ** 2)) + constants['siga']
+
+        else:
+            matrix[i][i - 1] = ((constants['d'] + constants['d']) / (2 * geo[1]**2))
+            matrix[i][i] = ((constants['d'] + 2 * constants['d'] + constants['d']) / (2 * geo[1] ** 2)) + constants['siga']
+            matrix[i][i + 1] = ((constants['d'] + constants['d']) / (2 * geo[1]**2))
+            # matrix[1][0] = 0  # added in to make sure that column 1 would be zeros
+            # matrix[slice_x-2][slice_x-1] = 0  # added in to make sure that the end column would be all zeros
+
     matrix = np.array(matrix)
+    print(matrix)
+    # Construct the identity matrix for fission. Recall this is our source of neutrons for each 'slice' of the reactor.
 
-    # Construct the identiy matrix for fission. Recall this is our source of neutrons for each 'slice' of the reactor.  
-    idsigf = None #replace the none with your calculation
+    idsigf = np.zeros((slices_x,slices_x))  # replace the none with your calculation
+    for i in range(slices_x):
+        idsigf[i][i] = (1 / (constants['nu'] * constants['sigf']))
+    print(idsigf)
+    # use the scipi linear algebra package to solve for the eigenvalues and eigenvectors.
+    w,v = linalg.eig(matrix, b=idsigf)
 
-    #use the scipi linear algebra package to solve for the eigenvalues and eigenvectors. 
-    w, v = linalg.eig(matrix, b=idsigf)
+    biggest = 0
+    index = 0
+    for i in range(slices_x):
+        if biggest > w[i]:
+            biggest = w[i]
+            index = i
+    print(index)
+    print(biggest)
+    for i in range(slices_x):
+        for j in range(slices_x):
+            if j != index:
+                v[i][j] = 0
+            else:
+                continue
     return w, v
